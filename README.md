@@ -27,14 +27,24 @@ Claude Code 在渲染 statusLine 时，会把一份 JSON 通过 **stdin** 传给
 
 ## 安装
 
+一行命令搞定（下载脚本 + 自动写入 `settings.json`，保留已有配置、原文件备份为 `.bak`）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mariohide/claude-5h-statusline/main/install.sh | bash
+```
+
+下一次在 Claude Code 发消息即生效。
+
+<details>
+<summary>手动安装</summary>
+
 ```bash
 # 1. 放到 PATH 上并赋可执行权限
 install -m 0755 claude-5h ~/.local/bin/claude-5h
-
-# 2. 在 ~/.claude/settings.json 里配置 statusLine
 ```
 
-```json
+```jsonc
+// 2. 在 ~/.claude/settings.json 里配置 statusLine（command 用绝对路径）
 {
   "statusLine": {
     "type": "command",
@@ -44,7 +54,7 @@ install -m 0755 claude-5h ~/.local/bin/claude-5h
 }
 ```
 
-下一次发消息时生效（Claude Code 在会话启动时读取 `settings.json`）。
+</details>
 
 ## 自定义
 
