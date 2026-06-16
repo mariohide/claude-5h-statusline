@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""极简 Claude Code statusLine：显示 5h 用量与重置时间。
+
+数据来源：Claude Code 通过 stdin 传入的 JSON 中的
+rate_limits.five_hour.used_percentage 与 resets_at（无需 API / daemon）。
+"""
+import json
+import sys
+import time
+
+# truecolor ANSI
+RESET = "\033[0m"
+DIM = "\033[38;2;120;125;132m"    # 暗灰：重置时间
+
+
+def color_for(pct: float) -> str:
+    """用量文字按档位着色：薄荷绿 → 橙 → 红。"""
+    if pct >= 90:
+        return "\033[38;2;232;116;116m"  # 红：临界
+    if pct >= 70:
+        return "\033[38;2;232;168;92m"   # 橙：警告
+    return "\033[38;2;142;224;192m"      # 较浅薄荷绿：安全
+
+
+def fmt_reset(resets_at) -> str:
+    """把重置时间戳格式化为剩余时长，如 2h27m。"""
+    if not resets_at:
+        return ""
+    remaining = int(resets_at) - int(time.time())
+    if remaining <= 0:
+        return "now"
+    h, m = divmod(remaining // 60, 60)
+    return f"{h}h{m:02d}m" if h else f"{m}m"
+
+
+def main() -> None:
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        return
+
+    five = (data.get("rate_limits") or {}).get("five_hour") or {}
+    pct = five.get("used_percentage")
+    if pct is None:
+        return  # 暂无配额数据（如刚开会话），不渲染
+
+    pct = float(pct)
+    if pct < 70:
+        return  # 用量未达 70% 时隐藏状态栏
+
+    col = color_for(pct)
+    label = f"5h {col}{pct:.0f}%{RESET}"
+
+    eta = fmt_reset(five.get("resets_at"))
+    if eta:
+        label += f" {DIM}· {eta}{RESET}"
+
+    sys.stdout.write(label)
+
+
+if __name__ == "__main__":
+    main()
