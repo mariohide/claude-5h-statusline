@@ -9,7 +9,7 @@
 - 仅在用量 **≥ 70%** 时显示，平时保持安静
 - 百分数按档位着色：**< 90% 橙 / ≥ 90% 红**（阈值内置薄荷绿用于更低用量，可改）
 - 重置剩余时间为暗灰
-- 零依赖、无后台进程、不调用任何 API —— 直接读取 Claude Code 通过 stdin 传入的 `rate_limits.five_hour`
+- 仅依赖 **Node**（Claude Code 自带，无需额外安装）、无后台进程、不调用任何 API —— 直接读取 Claude Code 通过 stdin 传入的 `rate_limits.five_hour`
 
 ## 原理
 
@@ -52,10 +52,10 @@ install -m 0755 claude-5h ~/.local/bin/claude-5h
 
 | 想改的东西 | 位置 |
 |---|---|
-| 显示阈值（默认 `< 70` 隐藏） | `main()` 里的 `if pct < 70: return` |
-| 分档颜色（薄荷绿 / 橙 / 红） | `color_for()` 的三个 truecolor RGB |
-| 是否显示重置时间 | `fmt_reset()` 及其拼接处 |
-| 时间格式（如 `2h13m`） | `fmt_reset()` |
+| 显示阈值（默认 `< 70` 隐藏） | `main()` 里的 `if (pct < 70) return` |
+| 分档颜色（薄荷绿 / 橙 / 红） | `colorFor()` 的三个 truecolor RGB |
+| 是否显示重置时间 | `fmtReset()` 及其拼接处 |
+| 时间格式（如 `2h13m`） | `fmtReset()` |
 
 ## License
 

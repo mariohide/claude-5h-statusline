@@ -1,62 +1,58 @@
-#!/usr/bin/env python3
-"""极简 Claude Code statusLine：显示 5h 用量与重置时间。
+#!/usr/bin/env node
+/**
+ * 极简 Claude Code statusLine：显示 5h 用量与重置时间。
+ *
+ * 数据来源：Claude Code 通过 stdin 传入的 JSON 中的
+ * rate_limits.five_hour.used_percentage 与 resets_at（无需 API / daemon）。
+ * 仅依赖 Node（Claude Code 自带），无额外依赖。
+ */
+"use strict";
+const fs = require("fs");
 
-数据来源：Claude Code 通过 stdin 传入的 JSON 中的
-rate_limits.five_hour.used_percentage 与 resets_at（无需 API / daemon）。
-"""
-import json
-import sys
-import time
+// truecolor ANSI
+const RESET = "\x1b[0m";
+const DIM = "\x1b[38;2;120;125;132m"; // 暗灰：重置时间
 
-# truecolor ANSI
-RESET = "\033[0m"
-DIM = "\033[38;2;120;125;132m"    # 暗灰：重置时间
+// 用量文字按档位着色：薄荷绿 → 橙 → 红
+function colorFor(pct) {
+  if (pct >= 90) return "\x1b[38;2;232;116;116m"; // 红：临界
+  if (pct >= 70) return "\x1b[38;2;232;168;92m"; // 橙：警告
+  return "\x1b[38;2;142;224;192m"; // 较浅薄荷绿：安全
+}
 
+// 把重置时间戳格式化为剩余时长，如 2h27m
+function fmtReset(resetsAt) {
+  if (!resetsAt) return "";
+  const remaining = Math.floor(Number(resetsAt) - Date.now() / 1000);
+  if (remaining <= 0) return "now";
+  const totalMin = Math.floor(remaining / 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h ? `${h}h${String(m).padStart(2, "0")}m` : `${m}m`;
+}
 
-def color_for(pct: float) -> str:
-    """用量文字按档位着色：薄荷绿 → 橙 → 红。"""
-    if pct >= 90:
-        return "\033[38;2;232;116;116m"  # 红：临界
-    if pct >= 70:
-        return "\033[38;2;232;168;92m"   # 橙：警告
-    return "\033[38;2;142;224;192m"      # 较浅薄荷绿：安全
+function main() {
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(0, "utf8"));
+  } catch {
+    return;
+  }
 
+  const five = (data.rate_limits && data.rate_limits.five_hour) || {};
+  const raw = five.used_percentage;
+  if (raw === null || raw === undefined) return; // 暂无配额数据，不渲染
 
-def fmt_reset(resets_at) -> str:
-    """把重置时间戳格式化为剩余时长，如 2h27m。"""
-    if not resets_at:
-        return ""
-    remaining = int(resets_at) - int(time.time())
-    if remaining <= 0:
-        return "now"
-    h, m = divmod(remaining // 60, 60)
-    return f"{h}h{m:02d}m" if h else f"{m}m"
+  const pct = Number(raw);
+  if (pct < 70) return; // 用量未达 70% 时隐藏状态栏
 
+  const col = colorFor(pct);
+  let label = `5h ${col}${Math.round(pct)}%${RESET}`;
 
-def main() -> None:
-    try:
-        data = json.load(sys.stdin)
-    except Exception:
-        return
+  const eta = fmtReset(five.resets_at);
+  if (eta) label += ` ${DIM}· ${eta}${RESET}`;
 
-    five = (data.get("rate_limits") or {}).get("five_hour") or {}
-    pct = five.get("used_percentage")
-    if pct is None:
-        return  # 暂无配额数据（如刚开会话），不渲染
+  process.stdout.write(label);
+}
 
-    pct = float(pct)
-    if pct < 70:
-        return  # 用量未达 70% 时隐藏状态栏
-
-    col = color_for(pct)
-    label = f"5h {col}{pct:.0f}%{RESET}"
-
-    eta = fmt_reset(five.get("resets_at"))
-    if eta:
-        label += f" {DIM}· {eta}{RESET}"
-
-    sys.stdout.write(label)
-
-
-if __name__ == "__main__":
-    main()
+main();
