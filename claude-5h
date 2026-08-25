@@ -1,58 +1,41 @@
-#!/usr/bin/env node
-/**
- * 极简 Claude Code statusLine：显示 5h 用量与重置时间。
- *
- * 数据来源：Claude Code 通过 stdin 传入的 JSON 中的
- * rate_limits.five_hour.used_percentage 与 resets_at（无需 API / daemon）。
- * 仅依赖 Node（Claude Code 自带），无额外依赖。
- */
-"use strict";
-const fs = require("fs");
+#!/bin/bash
+# Claude Code statusLine：常驻显示 5h 滚动窗口的用量与距重置剩余时间。
+#
+# 数据来自 Claude Code 通过 stdin 传入的 rate_limits.five_hour，
+# 无网络请求、无 API key、无后台进程。仅依赖 jq。
+#
+# 输出形如：  5h 42% · 2h13m
+# 百分数按档位着色：<70 薄荷绿 / 70–89 橙 / ≥90 红；剩余时间恒为暗灰。
 
-// truecolor ANSI
-const RESET = "\x1b[0m";
-const DIM = "\x1b[38;2;120;125;132m"; // 暗灰：重置时间
-
-// 用量文字按档位着色：薄荷绿 → 橙 → 红
-function colorFor(pct) {
-  if (pct >= 90) return "\x1b[38;2;232;116;116m"; // 红：临界
-  if (pct >= 70) return "\x1b[38;2;232;168;92m"; // 橙：警告
-  return "\x1b[38;2;142;224;192m"; // 较浅薄荷绿：安全
-}
-
-// 把重置时间戳格式化为剩余时长，如 2h27m
-function fmtReset(resetsAt) {
-  if (!resetsAt) return "";
-  const remaining = Math.floor(Number(resetsAt) - Date.now() / 1000);
-  if (remaining <= 0) return "now";
-  const totalMin = Math.floor(remaining / 60);
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return h ? `${h}h${String(m).padStart(2, "0")}m` : `${m}m`;
-}
-
-function main() {
-  let data;
-  try {
-    data = JSON.parse(fs.readFileSync(0, "utf8"));
-  } catch {
-    return;
-  }
-
-  const five = (data.rate_limits && data.rate_limits.five_hour) || {};
-  const raw = five.used_percentage;
-  if (raw === null || raw === undefined) return; // 暂无配额数据，不渲染
-
-  const pct = Number(raw);
-  if (pct < 70) return; // 用量未达 70% 时隐藏状态栏
-
-  const col = colorFor(pct);
-  let label = `5h ${col}${Math.round(pct)}%${RESET}`;
-
-  const eta = fmtReset(five.resets_at);
-  if (eta) label += ` ${DIM}· ${eta}${RESET}`;
-
-  process.stdout.write(label);
-}
-
-main();
+jq -j '
+try (
+  (.rate_limits.five_hour // {}) as $f
+  | $f.used_percentage as $raw
+  # 后端尚未下发配额数据时不渲染——没有数字可显示
+  | if $raw == null then empty else
+      ($raw | tonumber) as $pct
+      # 配色比较用原始值，显示用四舍五入值：89.6 显示 90% 但仍是橙色
+      | (if   $pct >= 90 then "[38;2;232;116;116m"
+         elif $pct >= 70 then "[38;2;232;168;92m"
+         else                 "[38;2;142;224;192m"
+         end) as $col
+      | $f.resets_at as $r
+      | (if ($r == null or $r == 0 or $r == false or $r == "") then ""
+         else
+           ((($r | tonumber) - now) | floor) as $rem
+           | if $rem <= 0 then "now"
+             else
+               (($rem / 60) | floor) as $tm
+               | (($tm / 60) | floor) as $h
+               | ($tm % 60) as $m
+               | if $h > 0
+                 then "\($h)h\(if $m < 10 then "0" else "" end)\($m)m"
+                 else "\($m)m"
+                 end
+             end
+         end) as $eta
+      | "5h \($col)\($pct | round)%[0m"
+        + (if $eta == "" then "" else " [38;2;120;125;132m· \($eta)[0m" end)
+    end
+) catch empty
+' 2>/dev/null || exit 0

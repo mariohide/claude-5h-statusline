@@ -4,7 +4,7 @@
 #
 # 做三件事：
 #   1) 下载 claude-5h 脚本到 ~/.local/bin 并赋可执行权限
-#   2) 用 Node 把 statusLine 合并写入 ~/.claude/settings.json（保留已有配置，原文件备份为 .bak）
+#   2) 用 jq 把 statusLine 合并写入 ~/.claude/settings.json（保留已有配置，原文件备份为 .bak）
 #   3) 提示生效方式
 set -euo pipefail
 
@@ -15,7 +15,7 @@ DEST="$BIN_DIR/claude-5h"
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS="$CLAUDE_DIR/settings.json"
 
-command -v node >/dev/null 2>&1 || { echo "❌ 需要 node（Claude Code 自带）。请确认 node 在 PATH 上。" >&2; exit 1; }
+command -v jq >/dev/null 2>&1 || { echo "❌ 需要 jq。macOS 自带 /usr/bin/jq；其它系统用包管理器安装。" >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || { echo "❌ 需要 curl。" >&2; exit 1; }
 
 mkdir -p "$BIN_DIR" "$CLAUDE_DIR"
@@ -26,16 +26,26 @@ curl -fsSL "$SRC/claude-5h" -o "$DEST"
 chmod +x "$DEST"
 
 # 2) 合并写入 settings.json（保留已有键，备份 .bak）
-node -e '
-const fs = require("fs");
-const [settings, cmd] = process.argv.slice(1);
-let cfg = {};
-try { cfg = JSON.parse(fs.readFileSync(settings, "utf8")); } catch {}
-if (fs.existsSync(settings)) fs.copyFileSync(settings, settings + ".bak");
-cfg.statusLine = { type: "command", command: cmd, refreshInterval: 1 };
-fs.writeFileSync(settings, JSON.stringify(cfg, null, 2) + "\n");
-' "$SETTINGS" "$DEST"
+TMP="$(mktemp)"
+trap 'rm -f "$TMP"' EXIT
+
+if [ -f "$SETTINGS" ]; then
+  # 先确认是合法 JSON 再动它——原地覆盖一份读不懂的配置等于把它删了
+  if ! jq -e . "$SETTINGS" >/dev/null 2>&1; then
+    echo "❌ $SETTINGS 不是合法 JSON，已中止（未做任何改动）。请先修好再重跑。" >&2
+    exit 1
+  fi
+  cp "$SETTINGS" "$SETTINGS.bak"
+  jq --arg cmd "$DEST" \
+    '.statusLine = {type: "command", command: $cmd, refreshInterval: 1}' \
+    "$SETTINGS" > "$TMP"
+else
+  jq -n --arg cmd "$DEST" \
+    '{statusLine: {type: "command", command: $cmd, refreshInterval: 1}}' > "$TMP"
+fi
+mv "$TMP" "$SETTINGS"
+trap - EXIT
 
 echo "✅ 已安装：$DEST"
-echo "   statusLine 已写入 $SETTINGS（原文件备份为 ${SETTINGS}.bak）"
-echo "   下一次在 Claude Code 发消息即生效。"
+echo "   statusLine 已写入 ${SETTINGS}（原文件备份为 ${SETTINGS}.bak）"
+echo "   下一次启动 Claude Code 即生效。"
