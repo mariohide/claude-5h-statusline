@@ -6,6 +6,7 @@
 #
 # 输出形如：  5h 42% · 2h13m
 # 百分数按档位着色：<70 薄荷绿 / 70–89 橙 / ≥90 红；剩余时间恒为暗灰。
+# 颜色一律用 jq 的 \u001b 转义写，不要用裸 ESC 字节——它一经文本处理就会丢。
 
 jq -j '
 try (
@@ -15,9 +16,9 @@ try (
   | if $raw == null then empty else
       ($raw | tonumber) as $pct
       # 配色比较用原始值，显示用四舍五入值：89.6 显示 90% 但仍是橙色
-      | (if   $pct >= 90 then "[38;2;232;116;116m"
-         elif $pct >= 70 then "[38;2;232;168;92m"
-         else                 "[38;2;142;224;192m"
+      | (if   $pct >= 90 then "\u001b[38;2;232;116;116m"
+         elif $pct >= 70 then "\u001b[38;2;232;168;92m"
+         else                 "\u001b[38;2;142;224;192m"
          end) as $col
       | $f.resets_at as $r
       | (if ($r == null or $r == 0 or $r == false or $r == "") then ""
@@ -34,8 +35,8 @@ try (
                  end
              end
          end) as $eta
-      | "5h \($col)\($pct | round)%[0m"
-        + (if $eta == "" then "" else " [38;2;120;125;132m· \($eta)[0m" end)
+      | "5h \($col)\($pct | round)%\u001b[0m"
+        + (if $eta == "" then "" else " \u001b[38;2;120;125;132m· \($eta)\u001b[0m" end)
     end
 ) catch empty
 ' 2>/dev/null || exit 0
